@@ -509,8 +509,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.accent, // COLORS: Main background color
       appBar: AppBar(
-        backgroundColor: AppColors.secondary,
+        backgroundColor: AppColors.roseGold,  // COLORS: top app bar color
         title: const Text('Expense Tracker'),
         actions: [
           IconButton(
@@ -568,7 +569,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 Card(
-                  color: AppColors.background,
+                  color: AppColors.background,  // COLORS: total spent card color
                   margin: const EdgeInsets.all(16),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -643,7 +644,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 12),
                             filled: true,
-                            fillColor: Colors.grey[100],
+                            fillColor: AppColors.secondary,
                             isDense: true,
                           ),
                           onChanged: (value) {
@@ -660,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.grey.shade400),
                           borderRadius: BorderRadius.circular(12),
-                          color: Colors.grey[100],
+                          color: AppColors.secondary,
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<ExpenseCategory?>(
@@ -721,7 +722,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Colors.grey,
+                          color: AppColors.primaryDark,
                         ),
                       ),
                     ),
@@ -857,6 +858,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        backgroundColor: AppColors.roseGold, //COLOR: plus button
+        foregroundColor: AppColors.accent,
         onPressed: () {
           showModalBottomSheet(
             context: context,

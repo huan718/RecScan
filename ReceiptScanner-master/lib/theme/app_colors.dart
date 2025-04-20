@@ -7,5 +7,6 @@ class AppColors {
   static const Color secondaryDark = Color(0xFFCBCBCB);   // #cbcbcb (203, 203, 203)
   static const Color primary = Color(0xFFA6A6A6);     // #a6a6a6 (166, 166, 166)
   static const Color primaryDark = Color(0xFF818181);   // #818181 (129, 129, 129)
+  static const Color roseGold = Color(0xFFE4D9CD);
 }
 
