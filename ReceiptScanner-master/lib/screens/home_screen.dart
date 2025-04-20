@@ -831,13 +831,34 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius: BorderRadius.zero,
                             ),
                             children: [
-                              if (expense.imagePath != null)
-                                ListTile(
-                                  leading: const Icon(Icons.image),
-                                  title: const Text('View Receipt'),
-                                  onTap: () =>
-                                      _showReceiptImage(expense.imagePath!),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        icon: const Icon(Icons.edit),
+                                        label: const Text('Edit'),
+                                        onPressed: () => _editExpense(originalIndex),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: expense.imagePath != null
+                                        ? ElevatedButton.icon(
+                                            icon: const Icon(Icons.image),
+                                            label: const Text('View Receipt'),
+                                            onPressed: () => _showReceiptImage(expense.imagePath!),
+                                          )
+                                        : ElevatedButton.icon(
+                                            icon: const Icon(Icons.add_a_photo),
+                                            label: const Text('Add Photo'),
+                                            onPressed: () => _addReceiptPhoto(originalIndex),
+                                          ),
+                                    ),
+                                  ],
                                 ),
+                              ),
                             ],
                           ),
                         ),
@@ -904,6 +925,164 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+
+  Future<void> _editExpense(int index) async {
+    final expense = _expenses[index];
+    final nameController = TextEditingController(text: expense.name);
+    final amountController = TextEditingController(text: expense.amount.toStringAsFixed(2));
+    DateTime pickedDate = expense.date;
+    ExpenseCategory selectedCategory = expense.category ?? ExpenseCategory.generalMerchandise;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) =>
+          StatefulBuilder(
+            builder: (ctx, setStateDialog) =>
+                AlertDialog(
+                  title: const Text('Edit Expense'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Description
+                        TextField(
+                          controller: nameController,
+                          decoration: const InputDecoration(labelText: 'Description'),
+                        ),
+                        const SizedBox(height: 12),
+                        // Amount
+                        TextField(
+                          controller: amountController,
+                          decoration: const InputDecoration(
+                            labelText: 'Amount',
+                            prefixText: '\$',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        ),
+                        const SizedBox(height: 12),
+                        // Date picker
+                        Row(
+                          children: [
+                            Text(DateFormat('MMM dd, yyyy').format(pickedDate)),
+                            TextButton(
+                              onPressed: () async {
+                                final dt = await showDatePicker(
+                                  context: ctx,
+                                  initialDate: pickedDate,
+                                  firstDate: DateTime(2000),
+                                  lastDate: DateTime.now(),
+                                );
+                                if (dt != null) setStateDialog(() => pickedDate = dt);
+                              },
+                              child: const Text('Change Date'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        // Category dropdown
+                        DropdownButtonFormField<ExpenseCategory>(
+                          value: selectedCategory,
+                          items: ExpenseCategory.values.map((c) {
+                            return DropdownMenuItem(
+                              value: c,
+                              child: Text(_getCategoryLabel(c)),
+                            );
+                          }).toList(),
+                          decoration: const InputDecoration(labelText: 'Category'),
+                          onChanged: (c) => setStateDialog(() => selectedCategory = c!),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final name = nameController.text.trim();
+                        final amt = double.tryParse(amountController.text) ?? 0;
+                        if (name.isEmpty || amt <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please enter a valid name and amount')),
+                          );
+                          return;
+                        }
+
+                        try {
+                          final purchases = await _dbHelper.getAllPurchases();
+                          final matchingPurchase = purchases.firstWhere(
+                            (p) =>
+                                p['name'] == expense.name &&
+                                p['price'] == expense.amount &&
+                                p['date'] == expense.date.toString(),
+                          );
+
+                          final updatedPurchase = Purchase(
+                            id: matchingPurchase['id'],
+                            name: name,
+                            date: pickedDate.toIso8601String(),
+                            price: amt,
+                            category: selectedCategory.toString().split('.').last,
+                            imagePath: expense.imagePath,
+                          );
+
+                          await _dbHelper.updatePurchase(updatedPurchase.toMap());
+                          await _loadExpenses();
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Expense updated successfully!')),
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error updating expense: $e')),
+                          );
+                        }
+                      },
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+  }
+
+  Future<void> _addReceiptPhoto(int index) async {
+    final expense = _expenses[index];
+    final imagePath = await _takePicture();
+    
+    if (imagePath != null) {
+      try {
+        final purchases = await _dbHelper.getAllPurchases();
+        final matchingPurchase = purchases.firstWhere(
+          (p) =>
+              p['name'] == expense.name &&
+              p['price'] == expense.amount &&
+              p['date'] == expense.date.toString(),
+        );
+
+        final updatedPurchase = Purchase(
+          id: matchingPurchase['id'],
+          name: expense.name,
+          date: expense.date.toString(),
+          price: expense.amount,
+          category: expense.category.toString().split('.').last,
+          imagePath: imagePath,
+        );
+
+        await _dbHelper.updatePurchase(updatedPurchase.toMap());
+        await _loadExpenses();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Receipt photo added successfully!')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error adding receipt photo: $e')),
+        );
+      }
+    }
+  }
 
   Future<void> _addExpenseWithImage(String imagePath) async {
     setState(() => _isLoading = true);
