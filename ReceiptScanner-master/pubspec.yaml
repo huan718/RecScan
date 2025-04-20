@@ -1,0 +1,25 @@
+name: receipt_scanner
+description: A receipt scanning and expense tracking application.
+version: 1.0.0+1
+
+environment:
+  sdk: ">=2.19.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  intl: ^0.18.0
+  image_picker: ^1.0.4
+  camera: ^0.10.5+9
+  path_provider: ^2.1.2
+  sqflite: ^2.3.0
+  path: ^1.8.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true 
