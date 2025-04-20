@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+
 import 'package:path_provider/path_provider.dart';
 import '../database_helper.dart';
 import '../purchase.dart';
 import 'stats_screen.dart';
 import 'settings_screen.dart';
 
+import 'dart:io';
+
+import '../api/veryfi_api.dart';
+final _veryfi = VeryfiApi();
 enum SortOption {
   dateNewest,
   dateOldest,
@@ -67,14 +71,14 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       // Ensure database is initialized
       await _dbHelper.database;
-      
+
       // Check if database schema is correct
       final isSchemaValid = await _dbHelper.checkDatabaseSchema();
       if (!isSchemaValid) {
         // Reset database if schema is invalid
         await _dbHelper.resetDatabase();
       }
-      
+
       await _loadExpenses();
     } catch (e) {
       if (mounted) {
@@ -90,16 +94,21 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final purchases = await _dbHelper.getAllPurchases();
       setState(() {
-        _expenses = purchases.map((p) => ExpenseEntry(
-          name: p['name'],
-          amount: p['price'],
-          date: DateTime.parse(p['date']),
-          category: ExpenseCategory.values.firstWhere(
-            (e) => e.toString().split('.').last == p['category'].toLowerCase(),
-            orElse: () => ExpenseCategory.generalMerchandise,
-          ),
-          imagePath: p['imagePath'],
-        )).toList();
+        _expenses = purchases.map((p) =>
+            ExpenseEntry(
+              name: p['name'],
+              amount: p['price'],
+              date: DateTime.parse(p['date']),
+              category: ExpenseCategory.values.firstWhere(
+                    (e) =>
+                e
+                    .toString()
+                    .split('.')
+                    .last == p['category'].toLowerCase(),
+                orElse: () => ExpenseCategory.generalMerchandise,
+              ),
+              imagePath: p['imagePath'],
+            )).toList();
         _calculateTotalSpent();
         _isLoading = false;
       });
@@ -250,7 +259,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   name: _capitalizeWords(expense.name),
                   date: expense.date.toString(),
                   price: expense.amount,
-                  category: expense.category.toString().split('.').last,
+                  category: expense.category
+                      .toString()
+                      .split('.')
+                      .last,
                 );
                 await _dbHelper.createPurchase(purchase.toMap());
                 await _loadExpenses();
@@ -269,9 +281,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final expense = _expenses[index];
       final purchases = await _dbHelper.getAllPurchases();
       final matchingPurchase = purchases.firstWhere(
-        (p) => p['name'] == expense.name && 
-               p['price'] == expense.amount && 
-               p['date'] == expense.date.toString(),
+            (p) =>
+        p['name'] == expense.name &&
+            p['price'] == expense.amount &&
+            p['date'] == expense.date.toString(),
       );
       await _dbHelper.deletePurchase(matchingPurchase['id']);
       await _loadExpenses();
@@ -891,56 +904,94 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _addExpenseWithImage(String imagePath) {
-    final nameController = TextEditingController();
-    final amountController = TextEditingController();
+
+  Future<void> _addExpenseWithImage(String imagePath) async {
+    setState(() => _isLoading = true);
+
+    late final ReceiptData data;
+    try {
+      data = await _veryfi.scanReceipt(imagePath);
+    } on StateError catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;                      // ← after this, nothing else runs on error
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('OCR failed: $e')),
+      );
+      return;                      // ← same here
+    }
+    setState(() => _isLoading = false);
+
+    final nameController = TextEditingController(text: data.vendor);
+    final amountController =
+    TextEditingController(text: (data.total ?? 0).toStringAsFixed(2));
+    DateTime pickedDate = data.date ?? DateTime.now();
     ExpenseCategory selectedCategory = ExpenseCategory.generalMerchandise;
 
-    showDialog(
+    await showDialog(
       context: context,
-      builder: (context) =>
+      builder: (ctx) =>
           StatefulBuilder(
-            builder: (context, setStateDialog) =>
+            builder: (ctx, setStateDialog) =>
                 AlertDialog(
-                  title: const Text('Add Receipt Details'),
+                  title: const Text('Confirm Receipt Details'),
                   content: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // 1) Name input
+                        // Description
                         TextField(
                           controller: nameController,
                           decoration: const InputDecoration(
-                            labelText: 'Description',
-                            border: OutlineInputBorder(),
-                          ),
+                              labelText: 'Description'),
                         ),
                         const SizedBox(height: 12),
-
-                        // 2) Amount input
+                        // Amount
                         TextField(
                           controller: amountController,
                           decoration: const InputDecoration(
                             labelText: 'Amount',
                             prefixText: '\$',
-                            border: OutlineInputBorder(),
                           ),
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
+                          keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                         ),
                         const SizedBox(height: 12),
-
-                        // 3) Category picker (you already had this)
+                        // Date picker
+                        Row(
+                          children: [
+                            Text(DateFormat('MMM dd, yyyy').format(pickedDate)),
+                            TextButton(
+                              onPressed: () async {
+                                final dt = await showDatePicker(
+                                  context: ctx,
+                                  initialDate: pickedDate,
+                                  firstDate: DateTime(2000),
+                                  lastDate: DateTime.now(),
+                                );
+                                if (dt != null) setStateDialog(() =>
+                                pickedDate = dt);
+                              },
+                              child: const Text('Change Date'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        // Category dropdown
                         DropdownButtonFormField<ExpenseCategory>(
                           value: selectedCategory,
-                          items: ExpenseCategory.values.map((c) =>
-                              DropdownMenuItem(value: c, child: Text(
-                                  _getCategoryLabel(c)))
-                          ).toList(),
+                          items: ExpenseCategory.values.map((c) {
+                            return DropdownMenuItem(
+                              value: c,
+                              child: Text(_getCategoryLabel(c)),
+                            );
+                          }).toList(),
                           decoration: const InputDecoration(
-                            labelText: 'Category',
-                            border: OutlineInputBorder(),
-                          ),
+                              labelText: 'Category'),
                           onChanged: (c) =>
                               setStateDialog(() => selectedCategory = c!),
                         ),
@@ -949,48 +1000,41 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => Navigator.pop(ctx),
                       child: const Text('Cancel'),
                     ),
                     ElevatedButton(
                       onPressed: () async {
                         final name = nameController.text.trim();
-                        final amtText = amountController.text.trim();
-                        final amount = double.tryParse(amtText);
-
-                        if (name.isEmpty || amount == null || amount <= 0) {
+                        final amt = double.tryParse(amountController.text) ?? 0;
+                        if (name.isEmpty || amt <= 0) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text(
-                                  'Please enter a valid name and amount'))
+                            const SnackBar(
+                                content: Text(
+                                    'Please enter a valid name and amount')),
                           );
                           return;
                         }
-
-                        try {
-                          final purchase = Purchase(
-                            name: _capitalizeWords(name),
-                            date: DateTime.now().toString(),
-                            price: amount,
-                            category: selectedCategory.toString().split('.').last,
-                            imagePath: imagePath,
-                          );
-                          await _dbHelper.createPurchase(purchase.toMap());
-                          await _loadExpenses();
-                          
-                          Navigator.pop(context);
-                          if (!mounted) return;
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Receipt added successfully!'))
-                          );
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error adding receipt: $e'))
-                          );
-                        }
+                        final purchase = Purchase(
+                          name: name,
+                          date: pickedDate.toIso8601String(),
+                          price: amt,
+                          category: selectedCategory
+                              .toString()
+                              .split('.')
+                              .last,
+                          imagePath: imagePath,
+                        );
+                        await DatabaseHelper.instance.createPurchase(
+                            purchase.toMap());
+                        await _loadExpenses();
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Receipt added successfully!')),
+                        );
                       },
-                      child: const Text('Save Receipt'),
+                      child: const Text('Save'),
                     ),
                   ],
                 ),
@@ -1192,4 +1236,5 @@ class ExpenseEntry {
     this.category,
     this.imagePath,
   });
-} 
+}
+
