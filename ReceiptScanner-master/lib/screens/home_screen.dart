@@ -50,7 +50,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _dbHelper = DatabaseHelper.instance;
   List<ExpenseEntry> _expenses = [];
   final TextEditingController _searchController = TextEditingController();
@@ -66,7 +66,23 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeDatabase();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // App has come back to the foreground, reload data
+      _loadExpenses();
+    }
   }
 
   Future<void> _initializeDatabase() async {
@@ -98,6 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _expenses = purchases.map((p) =>
             ExpenseEntry(
+              id: p['id'],
               name: p['name'],
               amount: p['price'],
               date: DateTime.parse(p['date']),
@@ -174,12 +191,6 @@ class _HomeScreenState extends State<HomeScreen> {
       case TimeFilter.thisWeek:
         return 'This Week';
     }
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   List<ExpenseEntry> get _filteredExpenses {
@@ -281,14 +292,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _removeExpense(int index) async {
     try {
       final expense = _expenses[index];
-      final purchases = await _dbHelper.getAllPurchases();
-      final matchingPurchase = purchases.firstWhere(
-            (p) =>
-        p['name'] == expense.name &&
-            p['price'] == expense.amount &&
-            p['date'] == expense.date.toString(),
-      );
-      await _dbHelper.deletePurchase(matchingPurchase['id']);
+      if (expense.id == null) {
+        throw StateError('Cannot remove expense: ID is missing');
+      }
+      
+      await _dbHelper.deletePurchase(expense.id!);
       await _loadExpenses();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -940,6 +948,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final amountController = TextEditingController(text: expense.amount.toStringAsFixed(2));
     DateTime pickedDate = expense.date;
     ExpenseCategory selectedCategory = expense.category ?? ExpenseCategory.generalMerchandise;
+    String? currentImagePath = expense.imagePath;
 
     await showDialog(
       context: context,
@@ -999,6 +1008,43 @@ class _HomeScreenState extends State<HomeScreen> {
                           decoration: const InputDecoration(labelText: 'Category'),
                           onChanged: (c) => setStateDialog(() => selectedCategory = c!),
                         ),
+                        const SizedBox(height: 12),
+                        // Receipt image section
+                        if (currentImagePath != null)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: const Icon(Icons.image),
+                                  label: const Text('View Receipt'),
+                                  onPressed: () => _showReceiptImage(currentImagePath!),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.delete),
+                                color: Colors.red,
+                                onPressed: () {
+                                  setStateDialog(() {
+                                    currentImagePath = null;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        if (currentImagePath == null)
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.add_a_photo),
+                            label: const Text('Add Photo'),
+                            onPressed: () async {
+                              final imagePath = await _takePicture();
+                              if (imagePath != null) {
+                                setStateDialog(() {
+                                  currentImagePath = imagePath;
+                                });
+                              }
+                            },
+                          ),
                       ],
                     ),
                   ),
@@ -1019,21 +1065,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         }
 
                         try {
-                          final purchases = await _dbHelper.getAllPurchases();
-                          final matchingPurchase = purchases.firstWhere(
-                            (p) =>
-                                p['name'] == expense.name &&
-                                p['price'] == expense.amount &&
-                                p['date'] == expense.date.toString(),
-                          );
+                          // Use the expense's ID directly instead of searching
+                          if (expense.id == null) {
+                            throw StateError('Cannot edit expense: ID is missing');
+                          }
 
                           final updatedPurchase = Purchase(
-                            id: matchingPurchase['id'],
+                            id: expense.id,
                             name: name,
                             date: pickedDate.toIso8601String(),
                             price: amt,
                             category: selectedCategory.toString().split('.').last,
-                            imagePath: expense.imagePath,
+                            imagePath: currentImagePath,
                           );
 
                           await _dbHelper.updatePurchase(updatedPurchase.toMap());
@@ -1410,6 +1453,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
 }
 
 class ExpenseEntry {
+  final int? id;
   final String name;
   final double amount;
   final DateTime date;
@@ -1417,6 +1461,7 @@ class ExpenseEntry {
   final String? imagePath;
 
   ExpenseEntry({
+    this.id,
     required this.name,
     required this.amount,
     required this.date,
