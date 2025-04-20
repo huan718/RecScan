@@ -6,6 +6,8 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../database_helper.dart';
 import '../purchase.dart';
+import 'stats_screen.dart';
+import 'settings_screen.dart';
 
 enum SortOption {
   dateNewest,
@@ -50,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   SortOption _currentSort = SortOption.dateNewest;
   String _searchQuery = '';
   TimeFilter _currentTimeFilter = TimeFilter.allTime;
+  ExpenseCategory? _selectedFilterCategory;
   ExpenseCategory _selectedCategory = ExpenseCategory.generalMerchandise;
   int? _expandedIndex;
   bool _isLoading = false;
@@ -171,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ExpenseEntry> get _filteredExpenses {
     final now = DateTime.now();
     var filtered = _expenses.where((expense) {
+      // Apply time filter
       switch (_currentTimeFilter) {
         case TimeFilter.allTime:
           return true;
@@ -191,6 +195,13 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }).toList();
 
+    // Apply category filter if selected
+    if (_selectedFilterCategory != null) {
+      filtered = filtered.where((expense) => 
+        expense.category == _selectedFilterCategory
+      ).toList();
+    }
+
     // Apply search filter if there's a search query
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((expense) =>
@@ -203,6 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Map<DateTime, List<ExpenseEntry>> get _groupedExpenses {
     final grouped = <DateTime, List<ExpenseEntry>>{};
+    
     for (final expense in _filteredExpenses) {
       final date = DateTime(
         expense.date.year,
@@ -212,14 +224,14 @@ class _HomeScreenState extends State<HomeScreen> {
       grouped.putIfAbsent(date, () => []).add(expense);
     }
 
-    // Sort expenses within each date group by name
+    // Sort expenses within each date group
     for (final expenses in grouped.values) {
       expenses.sort((a, b) => a.name.compareTo(b.name));
     }
 
     return Map.fromEntries(
-        grouped.entries.toList()
-          ..sort((a, b) =>
+      grouped.entries.toList()
+        ..sort((a, b) =>
           _currentSort == SortOption.dateNewest
               ? b.key.compareTo(a.key)
               : a.key.compareTo(b.key))
@@ -273,41 +285,37 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showSortOptions() {
     showModalBottomSheet(
       context: context,
-      builder: (context) =>
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('Sort by'),
-                tileColor: Theme
-                    .of(context)
-                    .primaryColor
-                    .withOpacity(0.1),
-              ),
-              ListTile(
-                leading: const Icon(Icons.calendar_today),
-                title: const Text('Date (Newest)'),
-                selected: _currentSort == SortOption.dateNewest,
-                onTap: () {
-                  setState(() {
-                    _currentSort = SortOption.dateNewest;
-                  });
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.calendar_today),
-                title: const Text('Date (Oldest)'),
-                selected: _currentSort == SortOption.dateOldest,
-                onTap: () {
-                  setState(() {
-                    _currentSort = SortOption.dateOldest;
-                  });
-                  Navigator.pop(context);
-                },
-              ),
-            ],
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: const Text('Sort by'),
+            tileColor: Theme.of(context).primaryColor.withOpacity(0.1),
           ),
+          ListTile(
+            leading: const Icon(Icons.calendar_today),
+            title: const Text('Date (Newest)'),
+            selected: _currentSort == SortOption.dateNewest,
+            onTap: () {
+              setState(() {
+                _currentSort = SortOption.dateNewest;
+              });
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.calendar_today),
+            title: const Text('Date (Oldest)'),
+            selected: _currentSort == SortOption.dateOldest,
+            onTap: () {
+              setState(() {
+                _currentSort = SortOption.dateOldest;
+              });
+              Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -493,21 +501,46 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.sort),
             onPressed: _showSortOptions,
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () async {
-              try {
-                await _dbHelper.resetDatabase();
-                await _loadExpenses();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Database reset successfully')),
-                );
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error resetting database: $e')),
-                );
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              switch (value) {
+                case 'stats':
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const StatsScreen(),
+                    ),
+                  );
+                  break;
+                case 'settings':
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SettingsScreen(),
+                    ),
+                  );
+                  break;
               }
             },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'stats',
+                child: ListTile(
+                  leading: Icon(Icons.bar_chart),
+                  title: Text('Statistics'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings),
+                  title: Text('Settings'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -567,39 +600,87 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: SizedBox(
-                    height: 40,
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search expenses...',
-                        prefixIcon: const Icon(Icons.search, size: 20),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
-                          onPressed: () {
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: 40,
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Search expenses...',
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 20),
+                                    onPressed: () {
+                                      setState(() {
+                                        _searchController.clear();
+                                        _searchQuery = '';
+                                      });
+                                    },
+                                  )
+                                : null,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12),
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                            isDense: true,
+                          ),
+                          onChanged: (value) {
                             setState(() {
-                              _searchController.clear();
-                              _searchQuery = '';
+                              _searchQuery = value;
                             });
                           },
-                        )
-                            : null,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12),
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        isDense: true,
                       ),
-                      onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                        });
-                      },
-                    ),
+                      const SizedBox(height: 8),
+                      Container(
+                        height: 40,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade400),
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.grey[100],
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<ExpenseCategory?>(
+                            value: _selectedFilterCategory,
+                            isExpanded: true,
+                            hint: const Text('Filter by category'),
+                            items: [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('All Categories'),
+                              ),
+                              ...ExpenseCategory.values.map((category) {
+                                return DropdownMenuItem(
+                                  value: category,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.circle,
+                                        size: 12,
+                                        color: _getCategoryColor(category),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(_getCategoryLabel(category)),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ],
+                            onChanged: (ExpenseCategory? newValue) {
+                              setState(() {
+                                _selectedFilterCategory = newValue;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -694,22 +775,29 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           child: ExpansionTile(
                             title: Text(expense.name),
-                            subtitle: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _getCategoryColor(category)
-                                    .withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                _getCategoryLabel(category),
-                                style: TextStyle(
-                                  color: _getCategoryColor(category),
-                                  fontSize: 12,
-                                ),
+                            subtitle: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Wrap(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _getCategoryColor(category)
+                                          .withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _getCategoryLabel(category),
+                                      style: TextStyle(
+                                        color: _getCategoryColor(category),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             trailing: Text(
