@@ -1,8 +1,19 @@
 import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load the .env file bundled in /assets
+  try {
+    await dotenv.load();            // defaults to ".env"
+  } on Exception catch (e) {
+    // If the file is missing you still want the app to run,
+    // just without OCR.
+    debugPrint('Could not load .env: $e');
+  }
+
   runApp(const MyApp());
 }
 
