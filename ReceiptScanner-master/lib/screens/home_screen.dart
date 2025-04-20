@@ -9,6 +9,8 @@ import '../purchase.dart';
 import 'stats_screen.dart';
 import 'settings_screen.dart';
 
+import 'package:receipt_scanner/theme/app_colors.dart';
+
 import 'dart:io';
 
 import '../api/veryfi_api.dart';
@@ -399,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Icon(
                   Icons.camera_alt,
                   size: 48,
-                  color: Colors.blue,
+                  color: Colors.black,
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -508,6 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: AppColors.secondary,
         title: const Text('Expense Tracker'),
         actions: [
           IconButton(
@@ -565,6 +568,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 Card(
+                  color: AppColors.background,
                   margin: const EdgeInsets.all(16),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -782,6 +786,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           );
                         },
                         child: Card(
+                          color: AppColors.background,
                           margin: const EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 4,
